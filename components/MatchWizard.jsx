@@ -3,24 +3,71 @@ import { POSITIONS } from "../lib/rating"
 import { useRouter } from "next/router"
 import PlayerForm from "./PlayerForm"
 
-export default function MatchWizard(){
- const router=useRouter(),[step,setStep]=useState(1),[players,setPlayers]=useState([]),[showAdd,setShowAdd]=useState(false),[form,setForm]=useState({opponentName:"",date:new Date().toISOString().slice(0,16),teamScore:0,opponentScore:0,selected:[],positions:{},goals:[]}),[error,setError]=useState(""),[saving,setSaving]=useState(false)
- async function loadPlayers(){const r=await fetch("/api/players");setPlayers(await r.json())}
- useEffect(()=>{loadPlayers()},[])
- const selected=players.filter(p=>form.selected.includes(p.id))
- function toggle(id){setForm(f=>({...f,selected:f.selected.includes(id)?f.selected.filter(x=>x!==id):f.selected.length<6?[...f.selected,id]:f.selected}))}
+function toLocalInput(value){
+ const d=value?new Date(value):new Date()
+ return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)
+}
+
+export default function MatchWizard({matchId}){
+ const isEdit=Boolean(matchId)
+ const router=useRouter(),[step,setStep]=useState(1),[players,setPlayers]=useState([]),[extraPlayers,setExtraPlayers]=useState([]),[showAdd,setShowAdd]=useState(false),[form,setForm]=useState({opponentName:"",date:toLocalInput(),teamScore:0,opponentScore:0,selected:[],positions:{},goals:[]}),[error,setError]=useState(""),[saving,setSaving]=useState(false),[loading,setLoading]=useState(isEdit)
+ const allPlayers=[...players,...extraPlayers.filter(e=>!players.some(p=>p.id===e.id))]
+ async function loadPlayers(){const r=await fetch("/api/players");const list=await r.json();setPlayers(list);return list}
+ useEffect(()=>{
+  async function init(){
+   const list=await loadPlayers()
+   if(!isEdit)return
+   const r=await fetch(`/api/matches/${matchId}`)
+   if(!r.ok){setError("المباراة غير موجودة");setLoading(false);return}
+   const m=await r.json()
+   setExtraPlayers(m.players.filter(mp=>!list.some(p=>p.id===mp.playerId)).map(mp=>({id:mp.playerId,name:mp.name,shirt_number:mp.shirtNumber,image:mp.image})))
+   setForm({
+    opponentName:m.opponentName,
+    date:toLocalInput(m.date),
+    teamScore:m.teamScore,
+    opponentScore:m.opponentScore,
+    selected:m.players.map(p=>p.playerId),
+    positions:Object.fromEntries(m.players.map(p=>[p.playerId,p.position])),
+    goals:[...m.goals].sort((a,b)=>a.goalOrder-b.goalOrder).map(g=>({scorerId:g.scorerId,assistId:g.assistId||""}))
+   })
+   setLoading(false)
+  }
+  init()
+ },[matchId])
+ const selected=allPlayers.filter(p=>form.selected.includes(p.id))
+ function toggle(id){setForm(f=>{
+  if(f.selected.includes(id))return {...f,selected:f.selected.filter(x=>x!==id),goals:f.goals.map(g=>({...g,scorerId:String(g.scorerId)===String(id)?"":g.scorerId,assistId:String(g.assistId)===String(id)?"":g.assistId}))}
+  return f.selected.length<6?{...f,selected:[...f.selected,id]}:f
+ })}
  function setPos(id,pos){setForm(f=>({...f,positions:{...f.positions,[id]:pos}}))}
  function addGoal(){if(form.goals.length>=Number(form.teamScore))return;setForm(f=>({...f,goals:[...f.goals,{scorerId:selected[0]?.id||"",assistId:""}]}))}
+ function removeGoal(i){setForm(f=>({...f,goals:f.goals.filter((_,j)=>j!==i)}))}
  function updateGoal(i,key,val){setForm(f=>({...f,goals:f.goals.map((g,j)=>j===i?{...g,[key]:val}:g)}))}
- async function save(){setSaving(true);setError("");const body={opponentName:form.opponentName,date:form.date,teamScore:Number(form.teamScore),opponentScore:Number(form.opponentScore),players:selected.map(p=>({playerId:p.id,position:form.positions[p.id]||"CM"})),goals:form.goals.map((g,i)=>({scorerId:g.scorerId,assistId:g.assistId||null,order:i+1}))};const res=await fetch("/api/matches",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await res.json();setSaving(false);if(!res.ok){setError(data.error||"خطأ في الحفظ");return}router.push(`/matches/${data.id}`)}
- return <div className="mx-auto max-w-4xl"><h1 className="mb-2 text-4xl font-black">إضافة مباراة</h1><p className="mb-8 text-gray-400">الخطوة {step} من 5</p><div className="mb-6 h-2 rounded-full bg-white/5"><div className="h-2 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 transition-all" style={{width:`${step*20}%`}}/></div>
+ async function save(){
+  setSaving(true);setError("")
+  const body={opponentName:form.opponentName,date:form.date,teamScore:Number(form.teamScore),opponentScore:Number(form.opponentScore),players:selected.map(p=>({playerId:p.id,position:form.positions[p.id]||"CM"})),goals:form.goals.map((g,i)=>({scorerId:g.scorerId,assistId:g.assistId||null,order:i+1}))}
+  const res=await fetch(isEdit?`/api/matches/${matchId}`:"/api/matches",{method:isEdit?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+  const data=await res.json()
+  setSaving(false)
+  if(!res.ok){setError(data.error||"خطأ في الحفظ");return}
+  router.push(`/matches/${data.id}`)
+ }
+ function next(){
+  if(step===1&&!form.opponentName)return setError("اسم المنافس مطلوب")
+  if(step===2&&form.selected.length!==6)return setError("اختر ستة لاعبين")
+  if(step===4&&form.goals.length!==Number(form.teamScore))return setError(`عدد الأهداف يجب أن يساوي ${form.teamScore}`)
+  if(step===4&&form.goals.some(g=>!g.scorerId))return setError("حدد مسجل كل هدف")
+  setError("");setStep(s=>s+1)
+ }
+ if(loading)return <div className="text-gray-400">جاري تحميل المباراة...</div>
+ return <div className="mx-auto max-w-4xl"><h1 className="mb-2 text-4xl font-black">{isEdit?"تعديل المباراة":"إضافة مباراة"}</h1><p className="mb-8 text-gray-400">الخطوة {step} من 5</p><div className="mb-6 h-2 rounded-full bg-white/5"><div className="h-2 rounded-full bg-gradient-to-r from-violet-500 to-pink-500 transition-all" style={{width:`${step*20}%`}}/></div>
  <div className="rounded-3xl border border-white/10 bg-[#14101E]/80 p-5 sm:p-6">
  {step===1&&<div className="space-y-4"><input value={form.opponentName} onChange={e=>setForm({...form,opponentName:e.target.value})} placeholder="اسم الفريق المنافس" className="w-full rounded-xl bg-black/20 p-4"/><input type="datetime-local" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} className="w-full rounded-xl bg-black/20 p-4"/><div className="grid grid-cols-2 gap-4"><input type="number" min="0" value={form.teamScore} onChange={e=>setForm({...form,teamScore:e.target.value})} placeholder="أهداف فريقك" className="rounded-xl bg-black/20 p-4"/><input type="number" min="0" value={form.opponentScore} onChange={e=>setForm({...form,opponentScore:e.target.value})} placeholder="أهداف الخصم" className="rounded-xl bg-black/20 p-4"/></div></div>}
- {step===2&&<div><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="font-bold">اللاعبون المختارون: <span className="text-violet-300">{form.selected.length} / 6</span></div><button onClick={()=>setShowAdd(true)} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-4 py-2.5 text-sm font-bold">+ إضافة لاعب هنا</button></div><div className="grid grid-cols-2 gap-3 md:grid-cols-3">{players.map(p=><button key={p.id} onClick={()=>toggle(p.id)} className={`rounded-2xl border p-4 text-right transition ${form.selected.includes(p.id)?"border-violet-500 bg-gradient-to-br from-violet-500/15 to-pink-500/10":"border-white/10 bg-black/10 hover:border-white/20"}`}><img src={p.image||"/player.svg"} className="mb-3 h-12 w-12 rounded-xl object-cover"/><div className="font-bold">{p.name}</div><div className="text-sm text-gray-500">#{p.shirt_number}</div></button>)}</div>{showAdd&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#14101E] p-6"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold">إضافة لاعب سريع</h2><button onClick={()=>setShowAdd(false)} className="text-gray-400">إغلاق</button></div><PlayerForm onSaved={async p=>{await loadPlayers();setForm(f=>({...f,selected:f.selected.length<6?[...f.selected,p.id]:f.selected}));setShowAdd(false)}}/></div></div>}</div>}
+ {step===2&&<div><div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="font-bold">اللاعبون المختارون: <span className="text-violet-300">{form.selected.length} / 6</span></div><button onClick={()=>setShowAdd(true)} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-4 py-2.5 text-sm font-bold">+ إضافة لاعب هنا</button></div><div className="grid grid-cols-2 gap-3 md:grid-cols-3">{allPlayers.map(p=><button key={p.id} onClick={()=>toggle(p.id)} className={`rounded-2xl border p-4 text-right transition ${form.selected.includes(p.id)?"border-violet-500 bg-gradient-to-br from-violet-500/15 to-pink-500/10":"border-white/10 bg-black/10 hover:border-white/20"}`}><img src={p.image||"/player.svg"} className="mb-3 h-12 w-12 rounded-xl object-cover"/><div className="font-bold">{p.name}</div><div className="text-sm text-gray-500">#{p.shirt_number}</div></button>)}</div>{showAdd&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#14101E] p-6"><div className="mb-5 flex items-center justify-between"><h2 className="text-xl font-bold">إضافة لاعب سريع</h2><button onClick={()=>setShowAdd(false)} className="text-gray-400">إغلاق</button></div><PlayerForm onSaved={async p=>{await loadPlayers();setForm(f=>({...f,selected:f.selected.length<6?[...f.selected,p.id]:f.selected}));setShowAdd(false)}}/></div></div>}</div>}
  {step===3&&<div className="space-y-3">{selected.map(p=><div key={p.id} className="flex items-center justify-between rounded-xl bg-black/20 p-4"><span>{p.name}</span><select value={form.positions[p.id]||"CM"} onChange={e=>setPos(p.id,e.target.value)} className="rounded-lg bg-[#1b1427] p-2">{POSITIONS.map(x=><option key={x}>{x}</option>)}</select></div>)}</div>}
- {step===4&&<div><div className="mb-4 flex items-center justify-between"><span>الأهداف: {form.goals.length} / {form.teamScore}</span><button onClick={addGoal} className="rounded-lg bg-violet-600 px-4 py-2">إضافة هدف</button></div>{form.goals.map((g,i)=><div key={i} className="mb-3 grid grid-cols-2 gap-2"><select value={g.scorerId} onChange={e=>updateGoal(i,"scorerId",e.target.value)} className="rounded-xl bg-[#1b1427] p-3"><option value="">مسجل الهدف</option>{selected.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select value={g.assistId} onChange={e=>updateGoal(i,"assistId",e.target.value)} className="rounded-xl bg-[#1b1427] p-3"><option value="">بدون تمريرة حاسمة</option>{selected.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></div>)}</div>}
+ {step===4&&<div><div className="mb-4 flex items-center justify-between"><span>الأهداف: {form.goals.length} / {form.teamScore}</span><button onClick={addGoal} className="rounded-lg bg-violet-600 px-4 py-2">إضافة هدف</button></div>{form.goals.map((g,i)=><div key={i} className="mb-3 grid grid-cols-[1fr_1fr_auto] gap-2"><select value={g.scorerId} onChange={e=>updateGoal(i,"scorerId",e.target.value)} className="rounded-xl bg-[#1b1427] p-3"><option value="">مسجل الهدف</option>{selected.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><select value={g.assistId} onChange={e=>updateGoal(i,"assistId",e.target.value)} className="rounded-xl bg-[#1b1427] p-3"><option value="">بدون تمريرة حاسمة</option>{selected.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><button onClick={()=>removeGoal(i)} className="rounded-xl bg-red-500/10 px-4 text-sm text-red-300">حذف</button></div>)}</div>}
  {step===5&&<div className="space-y-4"><div className="rounded-2xl bg-black/20 p-5"><div className="text-2xl font-black">{form.teamScore} - {form.opponentScore}</div><div className="text-gray-400">vs {form.opponentName}</div></div><div>اللاعبون: {selected.map(p=>`${p.name} (${form.positions[p.id]||"CM"})`).join("، ")}</div><div>عدد الأهداف المسجلة: {form.goals.length}</div></div>}
  {error&&<div className="mt-5 rounded-xl bg-red-500/10 p-3 text-red-300">{error}</div>}
- <div className="mt-8 flex justify-between"><button disabled={step===1} onClick={()=>setStep(s=>s-1)} className="rounded-xl bg-white/5 px-5 py-3 disabled:opacity-30">رجوع</button>{step<5?<button onClick={()=>{if(step===1&&!form.opponentName)return setError("اسم المنافس مطلوب");if(step===2&&form.selected.length!==6)return setError("اختر ستة لاعبين");if(step===4&&form.goals.length!==Number(form.teamScore))return setError("أكمل الأهداف");setError("");setStep(s=>s+1)}} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-3 font-bold">التالي</button>:<button disabled={saving} onClick={save} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-3 font-bold">{saving?"جاري الحفظ...":"حفظ المباراة"}</button>}</div>
+ <div className="mt-8 flex justify-between"><button disabled={step===1} onClick={()=>setStep(s=>s-1)} className="rounded-xl bg-white/5 px-5 py-3 disabled:opacity-30">رجوع</button>{step<5?<button onClick={next} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-3 font-bold">التالي</button>:<button disabled={saving} onClick={save} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-500 px-5 py-3 font-bold">{saving?"جاري الحفظ...":isEdit?"حفظ التعديلات":"حفظ المباراة"}</button>}</div>
  </div></div>
 }
