@@ -56,7 +56,7 @@ function MatchCard({match,onDelete}) {
       <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
         <div className="min-w-0 flex-1"><div className="mb-1 text-xs text-gray-500">{new Date(match.date).toLocaleDateString("ar-MA")} · مباراة #{match.id}</div><div className="text-xl font-black"><span className="mr-2 text-gray-500">vs</span><span className="bg-gradient-to-r from-violet-300 to-pink-300 bg-clip-text text-transparent">{match.opponentName}</span></div></div>
         <div className="rounded-2xl bg-black/25 px-5 py-3 text-center"><div className="text-3xl font-black tracking-wider"><span className="text-violet-300">{match.teamScore}</span><span className="mx-2 text-pink-400">:</span><span className="text-pink-300">{match.opponentScore}</span></div><div className={`mt-1 text-xs font-bold ${color}`}>{match.result === "win" ? "فوز" : match.result === "loss" ? "هزيمة" : "تعادل"}</div></div>
-        <div className="flex gap-2"><Link href={`/matches/${match.id}`} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 px-4 py-2 text-sm font-bold">التشكيلة</Link><button onClick={del} className="rounded-xl bg-red-500/10 px-4 py-2 text-sm text-red-300">حذف</button></div>
+        <div className="flex gap-2"><Link href={`/matches/${match.id}`} className="rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 px-4 py-2 text-sm font-bold">التشكيلة</Link><Link href={`/matches/edit/${match.id}`} className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-gray-200">تعديل</Link><button onClick={del} className="rounded-xl bg-red-500/10 px-4 py-2 text-sm text-red-300">حذف</button></div>
       </div>
     </div>
   </div>
