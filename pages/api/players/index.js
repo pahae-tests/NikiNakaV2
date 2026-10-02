@@ -3,7 +3,12 @@ import { query } from "../../../lib/db"
 export default async function handler(req,res){
  try{
   if(req.method==="GET"){
-   const rows=await query(`SELECT p.*,COUNT(DISTINCT mp.match_id) matches,COALESCE(SUM(g.scorer_id=p.id),0) goals,COALESCE(SUM(g.assist_id=p.id),0) assists,ROUND(AVG(mp.rating),1) avgRating FROM players p LEFT JOIN match_players mp ON mp.player_id=p.id LEFT JOIN goals g ON g.scorer_id=p.id OR g.assist_id=p.id WHERE p.is_active=1 GROUP BY p.id ORDER BY p.shirt_number`)
+   const rows=await query(`SELECT p.*,
+    (SELECT COUNT(*) FROM match_players mp WHERE mp.player_id=p.id) matches,
+    (SELECT COUNT(*) FROM goals g WHERE g.scorer_id=p.id) goals,
+    (SELECT COUNT(*) FROM goals g WHERE g.assist_id=p.id) assists,
+    ROUND((SELECT AVG(mp.rating) FROM match_players mp WHERE mp.player_id=p.id),1) avgRating
+    FROM players p WHERE p.is_active=1 ORDER BY p.shirt_number`)
    return res.json(rows)
   }
   if(req.method==="POST"){
