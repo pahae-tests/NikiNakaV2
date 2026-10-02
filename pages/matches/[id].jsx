@@ -1,7 +1,8 @@
 import { useRouter } from "next/router"
+import Link from "next/link"
 import { useEffect,useMemo,useState } from "react"
 import Layout from "../../components/Layout"
-import { CircleDot, Footprints, Trophy, ArrowRight } from "lucide-react"
+import { CircleDot, Footprints, Trophy, ArrowRight, Pencil } from "lucide-react"
 
 const basePositions={GK:[50,87],CB:[50,69],LB:[22,67],RB:[78,67],CM:[50,49],LW:[22,32],RW:[78,32],ST:[50,17]}
 const offsets=[[0,0],[-8,0],[8,0],[0,-7],[0,7],[-5,-6],[5,-6],[-5,6],[5,6]]
@@ -37,7 +38,7 @@ export default function Match(){
    <div className="rounded-2xl border border-white/10 bg-[#14101E]/90 p-5"><h2 className="mb-4 flex items-center gap-2 font-bold"><Trophy size={18} className="text-pink-300"/>أفضل لاعب</h2><Mvp players={m.players}/></div>
    <div className="rounded-2xl border border-white/10 bg-[#14101E]/90 p-5"><h2 className="mb-4 font-bold">الأهداف والتمريرات الحاسمة</h2>{m.goals.length?m.goals.map((g,i)=><div key={g.id||i} className="border-b border-white/5 py-3 text-sm"><span className="font-bold">الهدف {i+1}</span> · {g.scorerName}{g.assistName?` — تمريرة حاسمة: ${g.assistName}`:""}</div>):<div className="text-sm text-gray-500">لا توجد أهداف</div>}</div>
   </div>
-  <div className="mt-5 text-center"><button onClick={()=>history.back()} className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 text-sm text-gray-300"><ArrowRight size={17}/>العودة</button></div>
+  <div className="mt-5 flex items-center justify-center gap-3"><Link href={`/matches/edit/${m.id}`} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 px-4 py-3 text-sm font-bold"><Pencil size={17}/>تعديل المباراة</Link><button onClick={()=>history.back()} className="inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-3 text-sm text-gray-300"><ArrowRight size={17}/>العودة</button></div>
  </Layout>
 }
 function PlayerOnPitch({player,goals,assists}){return <div className="absolute z-10 -translate-x-1/2 -translate-y-1/2" style={player.style}>
